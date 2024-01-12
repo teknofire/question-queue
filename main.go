@@ -5,10 +5,12 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/teknofire/question-queue/models"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite" // Sqlite driver based on CGO
 	"gorm.io/gorm"
 
@@ -17,7 +19,7 @@ import (
 )
 
 type Queues struct {
-	db *gorm.DB
+	DB *gorm.DB
 }
 
 type QuestionList []models.Question
@@ -39,12 +41,12 @@ func (ql QuestionList) FindIndex(id uint) int {
 func (qs Queues) Pop(name string) (models.Question, bool) {
 	q := models.Question{Queue: name}
 
-	result := qs.db.Order("created_at asc").First(&q)
+	result := qs.DB.Order("created_at asc").First(&q)
 	log.Infof("%+v", q.ID)
 	if result.Error != nil {
 		return q, false
 	}
-	qs.db.Delete(&q)
+	qs.DB.Delete(&q)
 
 	return q, true
 }
@@ -54,7 +56,7 @@ func (qs Queues) All(name string) QuestionList {
 
 	q := models.Question{Queue: name}
 
-	qs.db.Where(&q).Order("created_at asc").Find(&questions)
+	qs.DB.Where(&q).Order("created_at asc").Find(&questions)
 
 	return questions
 }
@@ -72,16 +74,30 @@ func (t *Template) Render(w io.Writer, name string, data interface{}, c echo.Con
 }
 
 func main() {
-	db, err := gorm.Open(sqlite.Open("questions.sqlite"), &gorm.Config{})
-	db.AutoMigrate(&models.Question{})
+	queues := Queues{}
 
-	if err != nil {
-		log.Fatal(err)
+	port := os.Getenv("PORT")
+
+	if port == "" {
+		log.Fatal("$PORT must be set")
 	}
 
-	queues := Queues{
-		db: db,
+	database_url := os.Getenv("DATABASE_URL")
+	if database_url == "" {
+		db, err := gorm.Open(sqlite.Open("questions.sqlite"), &gorm.Config{})
+		if err != nil {
+			log.Fatal(err)
+		}
+		queues.DB = db
+	} else {
+		db, err := gorm.Open(postgres.Open(database_url), &gorm.Config{})
+		if err != nil {
+			log.Fatal(err)
+		}
+		queues.DB = db
 	}
+
+	queues.DB.AutoMigrate(&models.Question{})
 
 	funcs := template.FuncMap{
 		"url": func(q models.Question, path ...string) string {
@@ -160,7 +176,7 @@ func main() {
 		name := c.Param("name")
 		id := c.Param("id")
 
-		db.Delete(&models.Question{}, id)
+		queues.DB.Delete(&models.Question{}, id)
 
 		return c.Redirect(http.StatusMovedPermanently, fmt.Sprintf("/dashboard/%s?key=%s", name, ApiKey))
 	})
@@ -171,10 +187,10 @@ func main() {
 		question.Queue = c.Param("name")
 		question.Text = c.FormValue("q")
 
-		db.Create(&question)
+		queues.DB.Create(&question)
 
 		return c.String(http.StatusOK, question.String())
 	})
 
-	e.Logger.Fatal(e.Start(":1323"))
+	e.Logger.Fatal(e.Start(":" + port))
 }
