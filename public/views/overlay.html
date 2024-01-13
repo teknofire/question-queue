@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overlay</title>
+    <link rel='stylesheet' type='text/css' media='screen' href='/public/css/overlay.css'>
+</head>
+<body>
+    <svg viewBox="0 0 320 180">
+  <text class="count" x="50%" y="50%">
+    Queue: {{ . }}
+  </text>
+</svg>    
+    <script language="javascript">
+    setInterval(function(){
+        window.location.reload(1);
+    }, 10000);
+    </script>
+</body>
+</html>

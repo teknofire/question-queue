@@ -61,6 +61,15 @@ func (qs Queues) All(name string) QuestionList {
 	return questions
 }
 
+func (qs Queues) Count(name string) int64 {
+	q := models.Question{Queue: name}
+
+	var count int64
+	qs.DB.Where(&q).Count(&count)
+
+	return count
+}
+
 type Template struct {
 	templates *template.Template
 }
@@ -190,6 +199,13 @@ func main() {
 		queues.DB.Create(&question)
 
 		return c.String(http.StatusOK, question.String())
+	})
+
+	e.GET("/overlay/:name", func(c echo.Context) error {
+		name := c.Param("name")
+		count := queues.Count(name)
+
+		return c.Render(http.StatusOK, "overlay.html", count)
 	})
 
 	e.Logger.Fatal(e.Start(":" + port))
