@@ -25,7 +25,7 @@ type Queues struct {
 type QuestionList []models.Question
 
 var (
-	ApiKey = "cheesetoast"
+	ApiKey = ""
 )
 
 func (ql QuestionList) FindIndex(id uint) int {
@@ -85,6 +85,8 @@ func (t *Template) Render(w io.Writer, name string, data interface{}, c echo.Con
 func main() {
 	queues := Queues{}
 
+	ApiKey := os.Getenv("API_KEY")
+
 	port := os.Getenv("PORT")
 
 	if port == "" {
@@ -138,6 +140,10 @@ func main() {
 		Validator: func(key string, c echo.Context) (bool, error) {
 			return key == ApiKey, nil
 		},
+	}))
+
+	e.Use(middleware.RecoverWithConfig(middleware.RecoverConfig{
+		StackSize: 1 << 10, // 1 KB
 	}))
 
 	e.Static("/public/css", "public/css")
