@@ -110,7 +110,7 @@ func main() {
 
 	funcs := template.FuncMap{
 		"url": func(q models.Question, path ...string) string {
-			uri := []string{fmt.Sprintf("/queue/%s/%d", q.Queue, q.ID)}
+			uri := []string{fmt.Sprintf("/%s/%d", q.Queue, q.ID)}
 			uri = append(uri, path...)
 
 			return fmt.Sprintf("%s?key=%s", strings.Join(uri, "/"), ApiKey)
@@ -139,7 +139,7 @@ func main() {
 	e.Static("/public/css", "public/css")
 	e.Static("/public/js", "bower_components/")
 
-	e.GET("/dashboard/:name", func(c echo.Context) error {
+	e.GET("/:name", func(c echo.Context) error {
 		name := c.Param("name")
 		key := c.QueryParam("key")
 
@@ -150,7 +150,18 @@ func main() {
 		})
 	})
 
-	e.GET("/queue/:name/all", func(c echo.Context) error {
+	e.POST("/:name", func(c echo.Context) error {
+		question := models.Question{}
+
+		question.Queue = c.Param("name")
+		question.Text = c.FormValue("q")
+
+		queues.DB.Create(&question)
+
+		return c.String(http.StatusOK, question.String())
+	})
+
+	e.GET("/:name/all", func(c echo.Context) error {
 		name := c.Param("name")
 
 		queue := queues.All(name)
@@ -163,7 +174,7 @@ func main() {
 		return c.String(http.StatusOK, strings.Join(output, ""))
 	})
 
-	e.GET("/queue/:name/count", func(c echo.Context) error {
+	e.GET("/:name/count", func(c echo.Context) error {
 		name := c.Param("name")
 
 		queue := queues.All(name)
@@ -171,7 +182,7 @@ func main() {
 		return c.String(http.StatusOK, fmt.Sprintf("%d", len(queue)))
 	})
 
-	e.GET("/queue/:name/pop", func(c echo.Context) error {
+	e.GET("/:name/pop", func(c echo.Context) error {
 		name := c.Param("name")
 
 		if q, ok := queues.Pop(name); ok {
@@ -181,27 +192,16 @@ func main() {
 		return c.String(http.StatusBadRequest, "No questions in the queue\n")
 	})
 
-	e.POST("/queue/:name/:id/delete", func(c echo.Context) error {
+	e.POST("/:name/:id/delete", func(c echo.Context) error {
 		name := c.Param("name")
 		id := c.Param("id")
 
 		queues.DB.Delete(&models.Question{}, id)
 
-		return c.Redirect(http.StatusMovedPermanently, fmt.Sprintf("/dashboard/%s?key=%s", name, ApiKey))
+		return c.Redirect(http.StatusMovedPermanently, fmt.Sprintf("/%s/dashboard?key=%s", name, ApiKey))
 	})
 
-	e.POST("/queue/:name", func(c echo.Context) error {
-		question := models.Question{}
-
-		question.Queue = c.Param("name")
-		question.Text = c.FormValue("q")
-
-		queues.DB.Create(&question)
-
-		return c.String(http.StatusOK, question.String())
-	})
-
-	e.GET("/overlay/:name", func(c echo.Context) error {
+	e.GET("/:name/overlay", func(c echo.Context) error {
 		name := c.Param("name")
 		count := queues.Count(name)
 
