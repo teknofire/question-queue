@@ -185,9 +185,10 @@ func main() {
 
 	e.GET("/:name/overlay", func(c echo.Context) error {
 		name := c.Param("name")
-		count := app.Count(name)
 
-		return c.Render(http.StatusOK, "overlay.html", count)
+		queue := app.All(name)
+
+		return c.Render(http.StatusOK, "overlay.html", len(queue))
 	})
 
 	e.Logger.Fatal(e.Start(":" + port))
