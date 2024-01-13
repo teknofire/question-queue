@@ -97,12 +97,13 @@ func main() {
 	e.Use(middleware.Logger())
 
 	allowedPaths := []string{
-		"/public", "/setup", "/favicon.ico",
+		"/public", "/setup", "/favicon",
 	}
 	e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
 		Skipper: func(c echo.Context) bool {
 			for _, p := range allowedPaths {
-				if strings.HasPrefix(c.Path(), p) {
+				log.Println(c.Request().URL.Path, p)
+				if strings.HasPrefix(c.Request().URL.Path, p) {
 					return true
 				}
 			}
