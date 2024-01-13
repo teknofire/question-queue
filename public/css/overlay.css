@@ -2,7 +2,7 @@ body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }
 .count { 
     stroke-width: 8px; 
     stroke: #000; 
-    text-anchor: middle; 
+    text-anchor: start; 
     font-size: 50px;
     fill:#fff; 
     font-family: Georgia, serif;
