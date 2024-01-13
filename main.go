@@ -122,6 +122,10 @@ func main() {
 	}
 
 	e := echo.New()
+
+	e.Pre(middleware.MethodOverrideWithConfig(middleware.MethodOverrideConfig{
+		Getter: middleware.MethodFromForm("_method"),
+	}))
 	e.Renderer = templates
 	e.Use(middleware.RequestID())
 	e.Use(middleware.Logger())
@@ -192,13 +196,13 @@ func main() {
 		return c.String(http.StatusBadRequest, "No questions in the queue\n")
 	})
 
-	e.POST("/:name/:id/delete", func(c echo.Context) error {
+	e.DELETE("/:name/:id", func(c echo.Context) error {
 		name := c.Param("name")
 		id := c.Param("id")
 
 		queues.DB.Delete(&models.Question{}, id)
 
-		return c.Redirect(http.StatusMovedPermanently, fmt.Sprintf("/%s/dashboard?key=%s", name, ApiKey))
+		return c.Redirect(http.StatusMovedPermanently, fmt.Sprintf("/%s?key=%s", name, ApiKey))
 	})
 
 	e.GET("/:name/overlay", func(c echo.Context) error {
