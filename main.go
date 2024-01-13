@@ -102,7 +102,6 @@ func main() {
 	e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
 		Skipper: func(c echo.Context) bool {
 			for _, p := range allowedPaths {
-				log.Println(c.Request().URL.Path, p)
 				if strings.HasPrefix(c.Request().URL.Path, p) {
 					return true
 				}
