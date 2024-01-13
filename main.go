@@ -97,7 +97,7 @@ func main() {
 	e.Use(middleware.Logger())
 
 	allowedPaths := []string{
-		"/public", "/setup", "/favicon",
+		"/public", "/setup", "/favicon.ico",
 	}
 	e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
 		Skipper: func(c echo.Context) bool {
