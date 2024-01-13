@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/teknofire/question-queue/lib/client"
 	"github.com/teknofire/question-queue/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite" // Sqlite driver based on CGO
@@ -17,10 +18,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
-
-type Queues struct {
-	DB *gorm.DB
-}
 
 type QuestionList []models.Question
 
@@ -38,38 +35,6 @@ func (ql QuestionList) FindIndex(id uint) int {
 	return -1
 }
 
-func (qs Queues) Pop(name string) (models.Question, bool) {
-	q := models.Question{Queue: name}
-
-	result := qs.DB.Order("created_at asc").First(&q)
-	log.Infof("%+v", q.ID)
-	if result.Error != nil {
-		return q, false
-	}
-	qs.DB.Delete(&q)
-
-	return q, true
-}
-
-func (qs Queues) All(name string) QuestionList {
-	questions := []models.Question{}
-
-	q := models.Question{Queue: name}
-
-	qs.DB.Where(&q).Order("created_at asc").Find(&questions)
-
-	return questions
-}
-
-func (qs Queues) Count(name string) int64 {
-	q := models.Question{Queue: name}
-
-	var count int64
-	qs.DB.Where(&q).Count(&count)
-
-	return count
-}
-
 type Template struct {
 	templates *template.Template
 }
@@ -83,12 +48,11 @@ func (t *Template) Render(w io.Writer, name string, data interface{}, c echo.Con
 }
 
 func main() {
-	queues := Queues{}
+	app := client.Client{}
 
 	ApiKey := os.Getenv("API_KEY")
 
 	port := os.Getenv("PORT")
-
 	if port == "" {
 		log.Fatal("$PORT must be set")
 	}
@@ -99,16 +63,16 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		queues.DB = db
+		app.DB = db
 	} else {
 		db, err := gorm.Open(postgres.Open(database_url), &gorm.Config{})
 		if err != nil {
 			log.Fatal(err)
 		}
-		queues.DB = db
+		app.DB = db
 	}
 
-	queues.DB.AutoMigrate(&models.Question{})
+	app.DB.AutoMigrate(&models.Question{})
 
 	funcs := template.FuncMap{
 		"url": func(q models.Question, path ...string) string {
@@ -131,10 +95,18 @@ func main() {
 	e.Renderer = templates
 	e.Use(middleware.RequestID())
 	e.Use(middleware.Logger())
+
+	allowedPaths := []string{
+		"/public", "/setup", "/favicon",
+	}
 	e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
 		Skipper: func(c echo.Context) bool {
-			log.Printf("%s", c.Path())
-			return strings.HasPrefix(c.Path(), "/public")
+			for _, p := range allowedPaths {
+				if strings.HasPrefix(c.Path(), p) {
+					return true
+				}
+			}
+			return false
 		},
 		KeyLookup: "query:key",
 		Validator: func(key string, c echo.Context) (bool, error) {
@@ -156,7 +128,7 @@ func main() {
 		return c.Render(http.StatusOK, "dashboard.html", map[string]interface{}{
 			"Queue":     name,
 			"Key":       key,
-			"Questions": queues.All(name),
+			"Questions": app.All(name),
 		})
 	})
 
@@ -166,7 +138,7 @@ func main() {
 		question.Queue = c.Param("name")
 		question.Text = c.FormValue("q")
 
-		queues.DB.Create(&question)
+		app.DB.Create(&question)
 
 		return c.String(http.StatusOK, question.String())
 	})
@@ -174,7 +146,7 @@ func main() {
 	e.GET("/:name/all", func(c echo.Context) error {
 		name := c.Param("name")
 
-		queue := queues.All(name)
+		queue := app.All(name)
 
 		output := []string{}
 		for _, q := range queue {
@@ -187,7 +159,7 @@ func main() {
 	e.GET("/:name/count", func(c echo.Context) error {
 		name := c.Param("name")
 
-		queue := queues.All(name)
+		queue := app.All(name)
 
 		return c.String(http.StatusOK, fmt.Sprintf("%d", len(queue)))
 	})
@@ -195,7 +167,7 @@ func main() {
 	e.GET("/:name/pop", func(c echo.Context) error {
 		name := c.Param("name")
 
-		if q, ok := queues.Pop(name); ok {
+		if q, ok := app.Pop(name); ok {
 			return c.String(http.StatusOK, q.String())
 		}
 
@@ -206,14 +178,14 @@ func main() {
 		name := c.Param("name")
 		id := c.Param("id")
 
-		queues.DB.Delete(&models.Question{}, id)
+		app.DB.Delete(&models.Question{}, id)
 
 		return c.Redirect(http.StatusMovedPermanently, fmt.Sprintf("/%s?key=%s", name, ApiKey))
 	})
 
 	e.GET("/:name/overlay", func(c echo.Context) error {
 		name := c.Param("name")
-		count := queues.Count(name)
+		count := app.Count(name)
 
 		return c.Render(http.StatusOK, "overlay.html", count)
 	})
