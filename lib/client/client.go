@@ -1,7 +1,6 @@
 package client
 
 import (
-	"github.com/labstack/gommon/log"
 	"github.com/teknofire/question-queue/models"
 	"gorm.io/gorm"
 )
@@ -13,8 +12,10 @@ type Client struct {
 func (c Client) Pop(name string) (models.Question, bool) {
 	q := models.Question{Queue: name}
 
-	result := c.DB.Order("created_at asc").First(&q)
-	log.Infof("%+v", q.ID)
+	result := c.DB.Where(models.Question{Queue: name}).
+		Order("created_at asc").
+		First(&q)
+
 	if result.Error != nil {
 		return q, false
 	}
@@ -26,9 +27,9 @@ func (c Client) Pop(name string) (models.Question, bool) {
 func (c Client) All(name string) []models.Question {
 	questions := []models.Question{}
 
-	q := models.Question{Queue: name}
-
-	c.DB.Where(&q).Order("created_at asc").Find(&questions)
+	c.DB.Where(models.Question{Queue: name}).
+		Order("created_at asc").
+		Find(&questions)
 
 	return questions
 }
