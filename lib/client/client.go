@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	custom_middleware "github.com/teknofire/question-queue/middleware"
 	"github.com/teknofire/question-queue/model"
 	"gorm.io/gorm"
 )
 
 type Client struct {
-	ApiKey string
+	ApiKey *custom_middleware.ApiKey
 	DB     *gorm.DB
 }
 
@@ -28,8 +29,8 @@ func (c *Client) QuestionUrl(q model.Question, path ...string) string {
 }
 
 func (c *Client) AppendApiKey(uri string) string {
-	if len(c.ApiKey) > 0 {
-		uri = fmt.Sprintf("%s?key=%s", uri, c.ApiKey)
+	if !c.ApiKey.Header && len(c.ApiKey.Key) > 0 {
+		uri = fmt.Sprintf("%s?key=%s", uri, c.ApiKey.Key)
 	}
 
 	return uri

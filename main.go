@@ -12,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/teknofire/question-queue/lib/client"
+	custom_middleware "github.com/teknofire/question-queue/middleware"
 	"github.com/teknofire/question-queue/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite" // Sqlite driver based on CGO
@@ -22,10 +23,6 @@ import (
 )
 
 type QuestionList []model.Question
-
-var (
-	ApiKey = ""
-)
 
 func (ql QuestionList) FindIndex(id uint) int {
 	for i, q := range ql {
@@ -50,7 +47,9 @@ func (t *Template) Render(w io.Writer, name string, data interface{}, c echo.Con
 }
 
 func main() {
-	app := client.Client{}
+	app := client.Client{
+		ApiKey: custom_middleware.NewApiKey(),
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -76,28 +75,36 @@ func main() {
 
 	e := echo.New()
 
+	apiKey := custom_middleware.NewApiKey()
+	app.ApiKey = apiKey
+
+	e.Pre(app.ApiKey.Handler)
+
 	e.Pre(middleware.MethodOverrideWithConfig(middleware.MethodOverrideConfig{
 		Getter: middleware.MethodFromForm("_method"),
 	}))
 	e.Use(middleware.RequestID())
 
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		LogURI:       true,
-		LogStatus:    true,
-		LogError:     true,
-		LogMethod:    true,
-		LogHost:      true,
-		LogLatency:   true,
-		LogUserAgent: true,
-		HandleError:  true, // forwards error to the global error handler, so it can decide appropriate status code
+		LogURI:         true,
+		LogStatus:      true,
+		LogError:       true,
+		LogMethod:      true,
+		LogHost:        true,
+		LogLatency:     true,
+		LogUserAgent:   true,
+		LogHeaders:     []string{"API-KEY"},
+		LogQueryParams: []string{"key"},
+		HandleError:    true, // forwards error to the global error handler, so it can decide appropriate status code
 		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
-			log.Infof("%+v", v)
 			if v.Error == nil {
 				log.WithFields(logrus.Fields{
 					"URI":       v.URI,
 					"status":    v.Status,
 					"method":    v.Method,
 					"host":      v.Host,
+					"key":       v.QueryParams["key"],
+					"api-key":   v.Headers["API-KEY"],
 					"latency":   v.Latency,
 					"useragent": v.UserAgent,
 				}).Info("request")
@@ -107,6 +114,8 @@ func main() {
 					"status":    v.Status,
 					"method":    v.Method,
 					"host":      v.Host,
+					"key":       v.QueryParams["key"],
+					"api-key":   v.Headers["API-KEY"],
 					"latency":   v.Latency,
 					"useragent": v.UserAgent,
 					"error":     v.Error,
@@ -143,8 +152,7 @@ func main() {
 				return false, fmt.Errorf("%s not found", queue)
 			}
 
-			app.ApiKey = q.ApiKey
-			return subtle.ConstantTimeCompare([]byte(key), []byte(app.ApiKey)) == 1, nil
+			return subtle.ConstantTimeCompare([]byte(key), []byte(q.ApiKey)) == 1, nil
 		},
 	}))
 
@@ -167,9 +175,9 @@ func main() {
 
 	e.GET("/", func(c echo.Context) error {
 		var q model.Queue
-		if len(app.ApiKey) > 0 {
-			app.DB.Where("api_key = ?", app.ApiKey).First(&q)
-			return c.Redirect(http.StatusMovedPermanently, app.QueueUrl(q.Name))
+		if len(app.ApiKey.Key) > 0 {
+			app.DB.Where("api_key = ?", app.ApiKey.Key).First(&q)
+			return c.Redirect(http.StatusTemporaryRedirect, app.QueueUrl(q.Name))
 		}
 
 		return c.String(http.StatusOK, "Welcome")
@@ -234,7 +242,7 @@ func main() {
 
 		app.DB.Delete(&model.Question{}, id)
 
-		return c.Redirect(http.StatusMovedPermanently, app.QueueUrl(queue))
+		return c.Redirect(http.StatusTemporaryRedirect, app.QueueUrl(queue))
 	})
 
 	e.GET("/:queue/overlay", func(c echo.Context) error {
