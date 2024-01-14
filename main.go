@@ -73,6 +73,46 @@ func main() {
 
 	app.DB.AutoMigrate(&models.Question{}, &models.Queue{})
 
+	e := echo.New()
+
+	e.Pre(middleware.MethodOverrideWithConfig(middleware.MethodOverrideConfig{
+		Getter: middleware.MethodFromForm("_method"),
+	}))
+	e.Use(middleware.RequestID())
+	e.Use(middleware.Logger())
+
+	allowedPaths := []string{
+		"/public", "/setup", "/favicon", "/register",
+	}
+	e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
+		Skipper: func(c echo.Context) bool {
+			for _, path := range allowedPaths {
+				if strings.HasPrefix(c.Request().URL.Path, path) {
+					return true
+				}
+			}
+			return false
+		},
+		KeyLookup: "header:API-KEY,query:key",
+		Validator: func(key string, c echo.Context) (bool, error) {
+			queue := c.Param("queue")
+
+			var q models.Queue
+			result := app.DB.Where("name = ?", queue).First(&q)
+
+			if result.RowsAffected == 0 {
+				return false, fmt.Errorf("%s not found", queue)
+
+			}
+
+			return subtle.ConstantTimeCompare([]byte(key), []byte(q.ApiKey)) == 1, nil
+		},
+	}))
+
+	e.Use(middleware.RecoverWithConfig(middleware.RecoverConfig{
+		StackSize: 1 << 10, // 1 KB
+	}))
+
 	funcs := template.FuncMap{
 		"url": func(q models.Question, path ...string) string {
 			uri := []string{fmt.Sprintf("/%s/%d", q.Queue, q.ID)}
@@ -86,47 +126,7 @@ func main() {
 		templates: template.Must(template.New("root").Funcs(funcs).ParseGlob("public/views/*.html")),
 	}
 
-	e := echo.New()
-
-	e.Pre(middleware.MethodOverrideWithConfig(middleware.MethodOverrideConfig{
-		Getter: middleware.MethodFromForm("_method"),
-	}))
 	e.Renderer = templates
-	e.Use(middleware.RequestID())
-	e.Use(middleware.Logger())
-
-	// allowedPaths := []string{
-	// "/public", "/setup", "/favicon",
-	// }
-	e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
-		Skipper: func(c echo.Context) bool {
-			queue := c.Param("queue")
-
-			// Must validate access to API endpoints with key
-			if len(queue) > 0 {
-				return false
-			}
-
-			return true
-		},
-		KeyLookup: "header:API-KEY,query:key",
-		Validator: func(key string, c echo.Context) (bool, error) {
-			queue := c.Param("queue")
-
-			q := models.Queue{}
-			result := app.DB.Model(models.Queue{Name: queue}).First(&q)
-			if result.Error != nil {
-				return false, result.Error
-			}
-
-			return subtle.ConstantTimeCompare([]byte(key), []byte(q.ApiKey)) == 1, nil
-		},
-	}))
-
-	e.Use(middleware.RecoverWithConfig(middleware.RecoverConfig{
-		StackSize: 1 << 10, // 1 KB
-	}))
-
 	e.Static("/public/css", "public/css")
 	e.Static("/public/js", "bower_components/")
 
@@ -202,9 +202,9 @@ func main() {
 
 	e.POST("/register/:name", func(c echo.Context) error {
 		name := c.Param("name")
-		q := models.Queue{Name: name}
 
-		result := app.DB.Model(q).First(&q)
+		var q models.Queue
+		result := app.DB.Where("name = ?", name).First(&q)
 		if result.RowsAffected > 0 {
 			return c.String(http.StatusBadRequest, "Name already exists")
 		}
