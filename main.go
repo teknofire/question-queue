@@ -121,6 +121,10 @@ func main() {
 	}
 	e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
 		Skipper: func(c echo.Context) bool {
+			if c.Path() == "/" {
+				return true
+			}
+
 			for _, path := range allowedPaths {
 				if strings.HasPrefix(c.Request().URL.Path, path) {
 					return true
@@ -160,6 +164,16 @@ func main() {
 	e.Static("/public/css", "public/css")
 	e.Static("/public/js", "bower_components/")
 	e.Static("/favicon.ico", "public/favicon.ico")
+
+	e.GET("/", func(c echo.Context) error {
+		var q model.Queue
+		if len(app.ApiKey) > 0 {
+			app.DB.Where("api_key = ?", app.ApiKey).First(&q)
+			return c.Redirect(http.StatusMovedPermanently, app.QueueUrl(q.Name))
+		}
+
+		return c.String(http.StatusOK, "Welcome")
+	})
 
 	e.GET("/:queue", func(c echo.Context) error {
 		queue := c.Param("queue")
