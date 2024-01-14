@@ -177,7 +177,7 @@ func main() {
 		var q model.Queue
 		if len(app.ApiKey.Key) > 0 {
 			app.DB.Where("api_key = ?", app.ApiKey.Key).First(&q)
-			return c.Redirect(http.StatusTemporaryRedirect, app.QueueUrl(q.Name))
+			return c.Redirect(http.StatusFound, app.QueueUrl(q.Name))
 		}
 
 		return c.String(http.StatusOK, "Welcome")
@@ -242,7 +242,7 @@ func main() {
 
 		app.DB.Delete(&model.Question{}, id)
 
-		return c.Redirect(http.StatusTemporaryRedirect, app.QueueUrl(queue))
+		return c.Redirect(http.StatusFound, app.QueueUrl(queue))
 	})
 
 	e.GET("/:queue/overlay", func(c echo.Context) error {

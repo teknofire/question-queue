@@ -3,6 +3,6 @@
         <h5 class="card-title">{{ .Text }}</h5>
         <p class="card-text">Added: {{ .CreatedAt.Format "2006-01-02T15:04:05Z07:00" }}</p>
 
-        <a href="{{ questionUrl . }}" class="btn btn-danger btn-sm" data-method="DELETE">Delete</a>
+        <a href="{{ questionUrl . }}" class="btn btn-danger btn-sm" data-confirm="Are you sure?" data-method="DELETE">Delete</a>
     </div>
 </div>
