@@ -11,7 +11,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/teknofire/question-queue/lib/client"
-	"github.com/teknofire/question-queue/models"
+	"github.com/teknofire/question-queue/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite" // Sqlite driver based on CGO
 	"gorm.io/gorm"
@@ -20,7 +20,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 )
 
-type QuestionList []models.Question
+type QuestionList []model.Question
 
 var (
 	ApiKey = ""
@@ -71,7 +71,7 @@ func main() {
 		app.DB = db
 	}
 
-	app.DB.AutoMigrate(&models.Question{}, &models.Queue{})
+	app.DB.AutoMigrate(&model.Question{}, &model.Queue{})
 
 	e := echo.New()
 
@@ -97,7 +97,7 @@ func main() {
 		Validator: func(key string, c echo.Context) (bool, error) {
 			queue := c.Param("queue")
 
-			var q models.Queue
+			var q model.Queue
 			result := app.DB.Where("name = ?", queue).First(&q)
 
 			if result.RowsAffected == 0 {
@@ -114,7 +114,7 @@ func main() {
 	}))
 
 	funcs := template.FuncMap{
-		"url": func(q models.Question, path ...string) string {
+		"url": func(q model.Question, path ...string) string {
 			uri := []string{fmt.Sprintf("/%s/%d", q.Queue, q.ID)}
 			uri = append(uri, path...)
 
@@ -142,9 +142,9 @@ func main() {
 	})
 
 	e.POST("/:queue", func(c echo.Context) error {
-		question := models.Question{}
+		question := model.Question{}
 
-		question.Queue = c.Param("name")
+		question.Queue = c.Param("queue")
 		question.Text = c.FormValue("q")
 
 		app.DB.Create(&question)
@@ -187,7 +187,7 @@ func main() {
 		queue := c.Param("queue")
 		id := c.Param("id")
 
-		app.DB.Delete(&models.Question{}, id)
+		app.DB.Delete(&model.Question{}, id)
 
 		return c.Redirect(http.StatusMovedPermanently, fmt.Sprintf("/%s?key=%s", queue, ApiKey))
 	})
@@ -203,7 +203,7 @@ func main() {
 	e.POST("/register/:name", func(c echo.Context) error {
 		name := c.Param("name")
 
-		var q models.Queue
+		var q model.Queue
 		result := app.DB.Where("name = ?", name).First(&q)
 		if result.RowsAffected > 0 {
 			return c.String(http.StatusBadRequest, "Name already exists")
