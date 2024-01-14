@@ -26,7 +26,7 @@
 
     <div class="container">
     {{ range $index, $question := .Questions }}
-        <div class="list-group d-inline-flex">
+        <div class="d-inline-flex justify-content-center align-items-stretch">
         {{ template "question.html" $question }}
         </div>
     {{ end }}

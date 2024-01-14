@@ -1,12 +1,38 @@
 package client
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/teknofire/question-queue/model"
 	"gorm.io/gorm"
 )
 
 type Client struct {
-	DB *gorm.DB
+	ApiKey string
+	DB     *gorm.DB
+}
+
+func (c *Client) QueueUrl(queue string, path ...string) string {
+	parts := []string{queue}
+	uri := "/" + strings.Join(append(parts, path...), "/")
+
+	return c.AppendApiKey(uri)
+}
+
+func (c *Client) QuestionUrl(q model.Question, path ...string) string {
+	parts := []string{q.Queue, fmt.Sprintf("%d", q.ID)}
+	uri := "/" + strings.Join(append(parts, path...), "/")
+
+	return c.AppendApiKey(uri)
+}
+
+func (c *Client) AppendApiKey(uri string) string {
+	if len(c.ApiKey) > 0 {
+		uri = fmt.Sprintf("%s?key=%s", uri, c.ApiKey)
+	}
+
+	return uri
 }
 
 func (c Client) Pop(name string) (model.Question, bool) {

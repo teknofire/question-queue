@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/teknofire/question-queue/lib/client"
 	"github.com/teknofire/question-queue/model"
@@ -79,10 +80,44 @@ func main() {
 		Getter: middleware.MethodFromForm("_method"),
 	}))
 	e.Use(middleware.RequestID())
-	e.Use(middleware.Logger())
+
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogURI:       true,
+		LogStatus:    true,
+		LogError:     true,
+		LogMethod:    true,
+		LogHost:      true,
+		LogLatency:   true,
+		LogUserAgent: true,
+		HandleError:  true, // forwards error to the global error handler, so it can decide appropriate status code
+		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+			log.Infof("%+v", v)
+			if v.Error == nil {
+				log.WithFields(logrus.Fields{
+					"URI":       v.URI,
+					"status":    v.Status,
+					"method":    v.Method,
+					"host":      v.Host,
+					"latency":   v.Latency,
+					"useragent": v.UserAgent,
+				}).Info("request")
+			} else {
+				log.WithFields(logrus.Fields{
+					"URI":       v.URI,
+					"status":    v.Status,
+					"method":    v.Method,
+					"host":      v.Host,
+					"latency":   v.Latency,
+					"useragent": v.UserAgent,
+					"error":     v.Error,
+				}).Error("request error")
+			}
+			return nil
+		},
+	}))
 
 	allowedPaths := []string{
-		"/public", "/setup", "/favicon", "/register",
+		"/public", "/setup", "/favicon.ico", "/register",
 	}
 	e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
 		Skipper: func(c echo.Context) bool {
@@ -102,10 +137,10 @@ func main() {
 
 			if result.RowsAffected == 0 {
 				return false, fmt.Errorf("%s not found", queue)
-
 			}
 
-			return subtle.ConstantTimeCompare([]byte(key), []byte(q.ApiKey)) == 1, nil
+			app.ApiKey = q.ApiKey
+			return subtle.ConstantTimeCompare([]byte(key), []byte(app.ApiKey)) == 1, nil
 		},
 	}))
 
@@ -114,12 +149,7 @@ func main() {
 	}))
 
 	funcs := template.FuncMap{
-		"url": func(q model.Question, path ...string) string {
-			uri := []string{fmt.Sprintf("/%s/%d", q.Queue, q.ID)}
-			uri = append(uri, path...)
-
-			return fmt.Sprintf("%s?key=%s", strings.Join(uri, "/"), ApiKey)
-		},
+		"questionUrl": app.QuestionUrl,
 	}
 
 	templates := &Template{
@@ -129,8 +159,9 @@ func main() {
 	e.Renderer = templates
 	e.Static("/public/css", "public/css")
 	e.Static("/public/js", "bower_components/")
+	e.Static("/favicon.ico", "public/favicon.ico")
 
-	e.GET("/dashboard/:queue", func(c echo.Context) error {
+	e.GET("/:queue", func(c echo.Context) error {
 		queue := c.Param("queue")
 		key := c.QueryParam("key")
 
@@ -189,7 +220,7 @@ func main() {
 
 		app.DB.Delete(&model.Question{}, id)
 
-		return c.Redirect(http.StatusMovedPermanently, fmt.Sprintf("/%s?key=%s", queue, ApiKey))
+		return c.Redirect(http.StatusMovedPermanently, app.QueueUrl(queue))
 	})
 
 	e.GET("/:queue/overlay", func(c echo.Context) error {
