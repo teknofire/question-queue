@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"html/template"
 	"io"
@@ -50,8 +51,6 @@ func (t *Template) Render(w io.Writer, name string, data interface{}, c echo.Con
 func main() {
 	app := client.Client{}
 
-	ApiKey := os.Getenv("API_KEY")
-
 	port := os.Getenv("PORT")
 	if port == "" {
 		log.Fatal("$PORT must be set")
@@ -72,7 +71,7 @@ func main() {
 		app.DB = db
 	}
 
-	app.DB.AutoMigrate(&models.Question{})
+	app.DB.AutoMigrate(&models.Question{}, &models.Queue{})
 
 	funcs := template.FuncMap{
 		"url": func(q models.Question, path ...string) string {
@@ -96,21 +95,31 @@ func main() {
 	e.Use(middleware.RequestID())
 	e.Use(middleware.Logger())
 
-	allowedPaths := []string{
-		"/public", "/setup", "/favicon",
-	}
+	// allowedPaths := []string{
+	// "/public", "/setup", "/favicon",
+	// }
 	e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
 		Skipper: func(c echo.Context) bool {
-			for _, p := range allowedPaths {
-				if strings.HasPrefix(c.Request().URL.Path, p) {
-					return true
-				}
+			queue := c.Param("queue")
+
+			// Must validate access to API endpoints with key
+			if len(queue) > 0 {
+				return false
 			}
-			return false
+
+			return true
 		},
-		KeyLookup: "query:key",
+		KeyLookup: "header:API-KEY,query:key",
 		Validator: func(key string, c echo.Context) (bool, error) {
-			return key == ApiKey, nil
+			queue := c.Param("queue")
+
+			q := models.Queue{}
+			result := app.DB.Model(models.Queue{Name: queue}).First(&q)
+			if result.Error != nil {
+				return false, result.Error
+			}
+
+			return subtle.ConstantTimeCompare([]byte(key), []byte(q.ApiKey)) == 1, nil
 		},
 	}))
 
@@ -121,18 +130,18 @@ func main() {
 	e.Static("/public/css", "public/css")
 	e.Static("/public/js", "bower_components/")
 
-	e.GET("/:name", func(c echo.Context) error {
-		name := c.Param("name")
+	e.GET("/dashboard/:queue", func(c echo.Context) error {
+		queue := c.Param("queue")
 		key := c.QueryParam("key")
 
 		return c.Render(http.StatusOK, "dashboard.html", map[string]interface{}{
-			"Queue":     name,
+			"Queue":     queue,
 			"Key":       key,
-			"Questions": app.All(name),
+			"Questions": app.All(queue),
 		})
 	})
 
-	e.POST("/:name", func(c echo.Context) error {
+	e.POST("/:queue", func(c echo.Context) error {
 		question := models.Question{}
 
 		question.Queue = c.Param("name")
@@ -143,52 +152,66 @@ func main() {
 		return c.String(http.StatusOK, question.String())
 	})
 
-	e.GET("/:name/all", func(c echo.Context) error {
-		name := c.Param("name")
+	e.GET("/:queue/all", func(c echo.Context) error {
+		queue := c.Param("queue")
 
-		queue := app.All(name)
+		questions := app.All(queue)
 
 		output := []string{}
-		for _, q := range queue {
+		for _, q := range questions {
 			output = append(output, fmt.Sprintf("%d: %s\n", q.ID, q.String()))
 		}
 
 		return c.String(http.StatusOK, strings.Join(output, ""))
 	})
 
-	e.GET("/:name/count", func(c echo.Context) error {
-		name := c.Param("name")
+	e.GET("/:queue/count", func(c echo.Context) error {
+		queue := c.Param("queue")
 
-		queue := app.All(name)
+		questions := app.All(queue)
 
-		return c.String(http.StatusOK, fmt.Sprintf("%d", len(queue)))
+		return c.String(http.StatusOK, fmt.Sprintf("%d", len(questions)))
 	})
 
-	e.GET("/:name/pop", func(c echo.Context) error {
-		name := c.Param("name")
+	e.GET("/:queue/pop", func(c echo.Context) error {
+		queue := c.Param("queue")
 
-		if q, ok := app.Pop(name); ok {
+		if q, ok := app.Pop(queue); ok {
 			return c.String(http.StatusOK, q.String())
 		}
 
 		return c.String(http.StatusBadRequest, "No questions in the queue\n")
 	})
 
-	e.DELETE("/:name/:id", func(c echo.Context) error {
-		name := c.Param("name")
+	e.DELETE("/:queue/:id", func(c echo.Context) error {
+		queue := c.Param("queue")
 		id := c.Param("id")
 
 		app.DB.Delete(&models.Question{}, id)
 
-		return c.Redirect(http.StatusMovedPermanently, fmt.Sprintf("/%s?key=%s", name, ApiKey))
+		return c.Redirect(http.StatusMovedPermanently, fmt.Sprintf("/%s?key=%s", queue, ApiKey))
 	})
 
-	e.GET("/:name/overlay", func(c echo.Context) error {
+	e.GET("/:queue/overlay", func(c echo.Context) error {
+		queue := c.Param("queue")
+
+		questions := app.All(queue)
+
+		return c.Render(http.StatusOK, "overlay.html", len(questions))
+	})
+
+	e.POST("/register/:name", func(c echo.Context) error {
 		name := c.Param("name")
+		q := models.Queue{Name: name}
 
-		queue := app.All(name)
+		result := app.DB.Model(q).First(&q)
+		if result.RowsAffected > 0 {
+			return c.String(http.StatusBadRequest, "Name already exists")
+		}
 
-		return c.Render(http.StatusOK, "overlay.html", len(queue))
+		q.GenerateApiKey(name)
+		app.DB.Create(&q)
+		return c.String(http.StatusOK, q.ApiKey)
 	})
 
 	e.Logger.Fatal(e.Start(":" + port))
