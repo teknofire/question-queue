@@ -256,8 +256,8 @@ func main() {
 	e.POST("/register/:name", func(c echo.Context) error {
 		name := c.Param("name")
 
-		var q model.Queue
-		result := app.DB.Where("name = ?", name).First(&q)
+		q := model.Queue{Name: name}
+		result := app.DB.Where(q).First(&q)
 		if result.RowsAffected > 0 {
 			return c.String(http.StatusBadRequest, "Name already exists")
 		}
