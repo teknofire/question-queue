@@ -12,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/teknofire/question-queue/lib/client"
+	"github.com/teknofire/question-queue/lib/speech"
 	custom_middleware "github.com/teknofire/question-queue/middleware"
 	"github.com/teknofire/question-queue/model"
 	"gorm.io/driver/postgres"
@@ -51,6 +52,7 @@ func main() {
 		ApiKey: custom_middleware.NewApiKey(),
 	}
 
+	TTSApiKey := os.Getenv("TTS_API_KEY")
 	port := os.Getenv("PORT")
 	if port == "" {
 		log.Fatal("$PORT must be set")
@@ -170,6 +172,7 @@ func main() {
 
 	e.Renderer = templates
 	e.Static("/public/css", "public/css")
+	e.Static("/public/scripts", "public/scripts")
 	e.Static("/public/js", "bower_components/")
 	e.Static("/favicon.ico", "public/favicon.ico")
 
@@ -251,6 +254,31 @@ func main() {
 		questions := app.All(queue)
 
 		return c.Render(http.StatusOK, "overlay.html", len(questions))
+	})
+
+	e.GET("/:queue/:id/play", func(c echo.Context) error {
+		queue := c.Param("queue")
+		id := c.Param("id")
+
+		var q model.Question
+		results := app.DB.Where(&model.Question{Queue: queue}).First(&q, id)
+		if results.RowsAffected == 0 {
+			return c.String(http.StatusNotFound, "Question not found")
+		}
+
+		s := speech.New(TTSApiKey, speech.ADAM, speech.ENGLISH_V1)
+
+		c.Response().Header().Set(echo.HeaderContentType, "audio/mpeg")
+		c.Response().WriteHeader(http.StatusOK)
+
+		err := s.Stream(&q, c.Response())
+		c.Response().Flush()
+
+		if err != nil {
+			log.Error(err)
+		}
+
+		return nil
 	})
 
 	e.POST("/register/:name", func(c echo.Context) error {
